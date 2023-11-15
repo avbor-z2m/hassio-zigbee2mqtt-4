@@ -2,4 +2,4 @@ version: "1"
 rules:
   - base: master
     upstream: zigbee2mqtt:master
-    mergeMethod: rebase
+    mergeMethod: merge
