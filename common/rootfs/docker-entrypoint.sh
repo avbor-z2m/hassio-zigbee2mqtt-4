@@ -8,6 +8,20 @@ bashio::log.info "Preparing to start..."
 # - https://github.com/zigbee2mqtt/hassio-zigbee2mqtt/issues/387
 bashio::config.require 'data_path'
 
+export ZIGBEE2MQTT_DATA="$(bashio::config 'data_path')"
+
+# Migrate configuration to addon specific data path for HA backups, see https://github.com/zigbee2mqtt/hassio-zigbee2mqtt/issues/627
+if [[ "$ZIGBEE2MQTT_DATA" == "/addon_config/zigbee2mqtt" ]] && ! bashio::fs.file_exists "$ZIGBEE2MQTT_DATA/configuration.yaml" && bashio::fs.file_exists "/config/zigbee2mqtt/configuration.yaml"; then
+    bashio::log.info "Migrating configuration from /config/zigbee2mqtt to $ZIGBEE2MQTT_DATA/zigbee2mqtt"
+
+    mkdir -p "$ZIGBEE2MQTT_DATA" || bashio::exit.nok "Could not create $ZIGBEE2MQTT_DATA"
+    cp -r /config/zigbee2mqtt/* $ZIGBEE2MQTT_DATA/ || bashio::exit.nok "Error copying configuration files from /config to /addon_config."
+
+    bashio::log.info "Configuration migrated successfully."
+    bashio::log.info "Deleting old configuration from /config/zigbee2mqtt"
+    rm -rf /config/zigbee2mqtt
+fi
+
 # Socat
 if bashio::config.true 'socat.enabled'; then
     bashio::log.info "Socat enabled"
@@ -23,7 +37,6 @@ if bashio::config.true 'socat.enabled'; then
     fi
     bashio::log.info "Starting socat"
 
-    DATA_PATH=$(bashio::config 'data_path')
     SOCAT_OPTIONS=$(bashio::config 'socat.options')
 
     # Socat start configuration
@@ -37,8 +50,8 @@ if bashio::config.true 'socat.enabled'; then
 
     bashio::log.debug "Modifying process for logging if required"
     if bashio::config.true 'socat.log'; then
-        bashio::log.debug "Socat loggin enabled, setting file path to $DATA_PATH/socat.log"
-        exec &>"$DATA_PATH/socat.log" 2>&1
+        bashio::log.debug "Socat loggin enabled, setting file path to $ZIGBEE2MQTT_DATA/socat.log"
+        exec &>"$ZIGBEE2MQTT_DATA/socat.log" 2>&1
     else
     bashio::log.debug "No logging required"
     fi
@@ -46,8 +59,19 @@ else
     bashio::log.info "Socat not enabled"
 fi
 
-export ZIGBEE2MQTT_DATA="$(bashio::config 'data_path')"
-mkdir -p "$ZIGBEE2MQTT_DATA" || bashio::exit.nok "Could not create $ZIGBEE2MQTT_DATA"
+if ! bashio::fs.file_exists "$ZIGBEE2MQTT_DATA/configuration.yaml"; then
+    mkdir -p "$ZIGBEE2MQTT_DATA" || bashio::exit.nok "Could not create $ZIGBEE2MQTT_DATA"
+
+    cat <<EOF > "$ZIGBEE2MQTT_DATA/configuration.yaml"
+version: 4
+homeassistant:
+  enabled: true
+advanced:
+  network_key: GENERATE
+  pan_id: GENERATE
+  ext_pan_id: GENERATE
+EOF
+fi
 
 if bashio::config.has_value 'watchdog'; then
     export Z2M_WATCHDOG="$(bashio::config 'watchdog')"
@@ -55,15 +79,8 @@ if bashio::config.has_value 'watchdog'; then
 fi
 
 export NODE_PATH=/app/node_modules
-export ZIGBEE2MQTT_CONFIG_FRONTEND_ENABLED='true'
-export ZIGBEE2MQTT_CONFIG_FRONTEND_PORT='8099'
-export ZIGBEE2MQTT_CONFIG_HOMEASSISTANT_ENABLED='true'
-export Z2M_ONBOARD_URL='http://0.0.0.0:8099'
-
-if bashio::config.true 'force_onboarding'; then
-    export Z2M_ONBOARD_FORCE_RUN="1"
-    bashio::log.info "Forcing onboard to run"
-fi
+export ZIGBEE2MQTT_CONFIG_FRONTEND='{"enabled":true,"port": 8099}'
+export Z2M_ONBOARD_NO_SERVER="1"
 
 if bashio::config.true 'disable_tuya_default_response'; then
     bashio::log.info "Disabling TuYa default responses"
