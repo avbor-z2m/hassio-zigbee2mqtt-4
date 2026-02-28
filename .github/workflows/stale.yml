@@ -23,3 +23,4 @@ jobs:
         days-before-close: 7
         operations-per-run: 500
         exempt-issue-labels: breaking-change,dont-stale
+        exempt-pr-labels: dont-stale,breaking
