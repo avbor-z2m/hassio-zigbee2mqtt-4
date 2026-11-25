@@ -99,12 +99,14 @@ jobs:
         CONFIG_IMAGE=$(cat ${{ matrix.addon }}/config.json | jq -r '.image | sub("{arch}"; "${{ matrix.arch }}")')
         CONFIG_VERSION=$(cat ${{ matrix.addon }}/config.json | jq -r .version)
 
+        # home-assistant/builder runs as root with ~/.docker mounted, leaving
+        # root-owned files there that break the buildx CLI
+        sudo chown -R "$(id -u):$(id -g)" ~/.docker
+
         VERSIONS=("latest" "$CONFIG_VERSION")
         for VERSION in "${VERSIONS[@]}"; do
-          GHCR_IMAGE="$CONFIG_IMAGE:$CONFIG_VERSION"
+          GHCR_IMAGE="$CONFIG_IMAGE:$VERSION"
           DOCKER_IO_IMAGE=$(echo "$GHCR_IMAGE" | sed 's|ghcr\.io\/||')
           echo "Push: $GHCR_IMAGE -> $DOCKER_IO_IMAGE"
-          docker pull $GHCR_IMAGE
-          docker tag $GHCR_IMAGE $DOCKER_IO_IMAGE
-          docker push $DOCKER_IO_IMAGE
+          docker buildx imagetools create -t "$DOCKER_IO_IMAGE" "$GHCR_IMAGE"
         done
